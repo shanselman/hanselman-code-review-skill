@@ -44,7 +44,8 @@ task({
   name: "opus-review",
   agent_type: "rubber-duck",
   mode: "background",
-  model: "claude-opus-4.6",
+  model: "claude-opus-5",
+  reasoning_effort: "high",
   prompt: "<full context + code + review instructions>"
 })
 ```
@@ -55,7 +56,8 @@ task({
   name: "codex-review",
   agent_type: "rubber-duck",
   mode: "background",
-  model: "gpt-5.2-codex",
+  model: "gpt-5.3-codex",
+  reasoning_effort: "high",
   prompt: "<same context + code + review instructions>"
 })
 ```
@@ -148,7 +150,11 @@ For each issue, include:
 
 ## Model Selection
 
-The default pairing is **Claude Opus** + **GPT Codex** because they have fundamentally different training and reasoning patterns, maximizing the chance of catching different classes of issues.
+The default pairing uses these pinned model IDs at high reasoning effort:
+- **Claude Opus 5:** `claude-opus-5`
+- **GPT-5.3-Codex:** `gpt-5.3-codex`
+
+Use this exact cross-family pairing when both models are available. Their different training and reasoning patterns maximize the chance of catching different classes of issues.
 
 Alternative pairings if a model is unavailable:
 - Claude Opus + Claude Sonnet (different capability tiers, same family)

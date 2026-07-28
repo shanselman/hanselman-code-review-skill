@@ -2,7 +2,7 @@
 
 Adversarial dual-model code review skill for [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli/).
 
-Runs two AI models (Claude Opus + GPT Codex) in parallel on the same code, cross-references their findings, and produces a consensus severity table with fix confidence ratings.
+Runs Claude Opus 5 (`claude-opus-5`) and GPT-5.3-Codex (`gpt-5.3-codex`) at high reasoning effort in parallel on the same code, cross-references their findings, and produces a consensus severity table with fix confidence ratings.
 
 ## How It Works
 
