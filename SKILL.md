@@ -34,28 +34,31 @@ Determine what code to review:
 - If reviewing a PR, use the GitHub MCP to get the diff
 - For a branch, diff against the base branch
 
+For a repeat review, pin the current head and compare it with the previously reviewed head. Review changed code, affected callers/tests, and unresolved or disputed findings rather than automatically repeating the full review. If the code is unchanged and only the models changed, focus both reviewers on those findings and high-risk decisions. State the delta scope and retain any missing runtime-proof gates.
+
 ### Step 2: Launch Two Parallel Reviews
 
 Launch two `rubber-duck` agents via the `task` tool, running in **background** mode with different models:
 
-**Agent 1 — Opus (deep reasoning):**
+**Agent 1: Claude Opus 5.5 (deep reasoning)**
 ```
 task({
   name: "opus-review",
   agent_type: "rubber-duck",
   mode: "background",
-  model: "claude-opus-4.6",
+  model: "claude-opus-5.5",
   prompt: "<full context + code + review instructions>"
 })
 ```
 
-**Agent 2 — Codex (different perspective):**
+**Agent 2: GPT-5.6 Sol (1M context, different perspective)**
 ```
 task({
-  name: "codex-review",
+  name: "sol-review",
   agent_type: "rubber-duck",
   mode: "background",
-  model: "gpt-5.2-codex",
+  model: "gpt-5.6-sol",
+  context_tier: "long_context",
   prompt: "<same context + code + review instructions>"
 })
 ```
@@ -67,22 +70,24 @@ task({
 
 ### Step 3: Wait for Both to Complete
 
-Wait for both background agents to finish. Read their results with `read_agent`.
+Use the background interval for independent work. Wait for each completion notification, then read its result with `read_agent`; do not poll. Reconcile both completed reviews before publishing a consensus.
 
 ### Step 4: Cross-Reference and Build the Consensus Table
 
 Create a SQL table to track findings:
 
 ```sql
-CREATE TABLE review_findings (
+CREATE TABLE IF NOT EXISTS review_findings (
     id TEXT PRIMARY KEY,
     issue TEXT NOT NULL,
     opus_severity TEXT,
-    codex_severity TEXT,
+    sol_severity TEXT,
     consensus TEXT NOT NULL,
     fix_confidence INTEGER NOT NULL
 );
 ```
+
+If the session already has a findings table, inspect and reuse or migrate its schema without discarding earlier findings. Record which model produced each review; do not relabel an older Codex result as Sol.
 
 For each finding from either model:
 1. Check if the other model found the same or similar issue
@@ -102,13 +107,13 @@ Present findings in two tables:
 
 **Both Models Agree → HIGH consensus (fix all)**
 
-| Issue | Opus | Codex | Fix Confidence |
+| Issue | Opus 5.5 | GPT-5.6 Sol | Fix Confidence |
 |-------|------|-------|----------------|
 | Description of issue | SEVERITY | SEVERITY | XX% |
 
 **Only One Model Flagged → LOW consensus**
 
-| Issue | Opus | Codex | Fix Confidence |
+| Issue | Opus 5.5 | GPT-5.6 Sol | Fix Confidence |
 |-------|------|-------|----------------|
 | Description of issue | SEVERITY or — | SEVERITY or — | XX% |
 
@@ -148,12 +153,11 @@ For each issue, include:
 
 ## Model Selection
 
-The default pairing is **Claude Opus** + **GPT Codex** because they have fundamentally different training and reasoning patterns, maximizing the chance of catching different classes of issues.
+The default pairing is **Claude Opus 5.5** (`claude-opus-5.5`) + **GPT-5.6 Sol** (`gpt-5.6-sol`, `context_tier: "long_context"` for its 1M context tier). Different model families provide independent perspectives on the same evidence.
 
-Alternative pairings if a model is unavailable:
-- Claude Opus + Claude Sonnet (different capability tiers, same family)
-- GPT Codex + Claude Haiku (fast but different perspectives)
-- Any two models from different families for maximum diversity
+`1M` is a context tier, not part of the model ID. Use the tool's supported `long_context` value, not an invented model name. Do not override reasoning effort unless requested.
+
+If a preferred model or context tier is unavailable, report the limitation and use an available alternative only with the user's approval. Record the actual model IDs and context tiers used; do not silently fall back to an older generation.
 
 ## Important Notes
 
