@@ -2,7 +2,7 @@
 
 Adversarial dual-model code review skill for [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli/).
 
-Runs two AI models (Claude Opus 5.5 + GPT-5.6 Sol with 1M context) in parallel on the same code, cross-references their findings, and produces a consensus severity table with fix confidence ratings.
+Runs two AI models (Claude Opus 5.5 + GPT-5.6 Sol with 1M context), both at high reasoning effort, in parallel on the same code, cross-references their findings, and produces a consensus severity table with fix confidence ratings.
 
 The tool model IDs are `claude-opus-5.5` and `gpt-5.6-sol`. Sol uses `context_tier: "long_context"`; `1M` is not a model-name suffix. Unavailable models or context tiers are reported rather than silently replaced with older generations.
 

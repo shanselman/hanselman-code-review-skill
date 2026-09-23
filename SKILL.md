@@ -47,6 +47,7 @@ task({
   agent_type: "rubber-duck",
   mode: "background",
   model: "claude-opus-5.5",
+  reasoning_effort: "high",
   prompt: "<full context + code + review instructions>"
 })
 ```
@@ -59,6 +60,7 @@ task({
   mode: "background",
   model: "gpt-5.6-sol",
   context_tier: "long_context",
+  reasoning_effort: "high",
   prompt: "<same context + code + review instructions>"
 })
 ```
@@ -153,9 +155,9 @@ For each issue, include:
 
 ## Model Selection
 
-The default pairing is **Claude Opus 5.5** (`claude-opus-5.5`) + **GPT-5.6 Sol** (`gpt-5.6-sol`, `context_tier: "long_context"` for its 1M context tier). Different model families provide independent perspectives on the same evidence.
+The default pairing is **Claude Opus 5.5** (`claude-opus-5.5`) + **GPT-5.6 Sol** (`gpt-5.6-sol`, `context_tier: "long_context"` for its 1M context tier), both with `reasoning_effort: "high"`. Different model families provide independent perspectives on the same evidence.
 
-`1M` is a context tier, not part of the model ID. Use the tool's supported `long_context` value, not an invented model name. Do not override reasoning effort unless requested.
+`1M` is a context tier, not part of the model ID. Use the tool's supported `long_context` value, not an invented model name. Preserve the high reasoning default unless the user requests a different effort.
 
 If a preferred model or context tier is unavailable, report the limitation and use an available alternative only with the user's approval. Record the actual model IDs and context tiers used; do not silently fall back to an older generation.
 
