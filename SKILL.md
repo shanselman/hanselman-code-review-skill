@@ -5,11 +5,14 @@ description: "Adversarial dual-model code review that runs two AI models in para
 
 # Hanselman Adversarial Code Review Skill
 
-Run a rigorous, adversarial code review using two AI models in parallel. Cross-reference their findings to separate signal from noise, producing a consensus severity table with fix confidence ratings.
+Run a rigorous, adversarial code review using two AI models in parallel.
+Cross-reference their findings to separate signal from noise, producing a
+consensus severity table with fix confidence ratings.
 
 ## When to Use
 
 Invoke this skill when the user asks for:
+
 - A thorough or deep code review
 - An adversarial review
 - A dual-model review
@@ -19,29 +22,46 @@ Invoke this skill when the user asks for:
 
 ## Philosophy
 
-Single-model reviews have blind spots. Two models reviewing independently surface different classes of issues — security vs correctness vs edge cases. By cross-referencing, we get:
-- **HIGH consensus** (both models flag it) → almost certainly a real issue
-- **LOW consensus** (only one model flags it) → may be noise, use judgment
-- **Disputed** (one model flags, evidence contradicts) → investigate before acting
+Single-model reviews have blind spots. Two models reviewing independently
+surface different classes of issues: security, correctness, and edge cases.
+Cross-reference their findings:
+
+- **HIGH consensus** (both models flag it): strong evidence; verify the issue.
+- **LOW consensus** (only one model flags it): may be noise; use judgment.
+- **Disputed** (a model flags it but evidence contradicts it): investigate
+  before acting.
 
 ## Review Workflow
 
 ### Step 1: Identify the Scope
 
 Determine what code to review:
-- If the user specifies files, use those
-- If the user says "review my changes", use `git diff` or `git diff --staged`
-- If reviewing a PR, use the GitHub MCP to get the diff
-- For a branch, diff against the base branch
 
-For a repeat review, pin the current head and compare it with the previously reviewed head. Review changed code, affected callers/tests, and unresolved or disputed findings rather than automatically repeating the full review. If the code is unchanged and only the models changed, focus both reviewers on those findings and high-risk decisions. State the delta scope and retain any missing runtime-proof gates.
+- If the user specifies files, use those.
+- If the user says "review my changes", use `git diff` or `git diff --staged`.
+- For a PR, use `gh pr view` and `gh pr diff`, pinning the exact head and base.
+- For a branch, diff against the base branch.
+
+Capture the exact reviewed head and base before building the reviewer prompt.
+After both reviews finish, re-read the live head. If it changed, mark the
+review stale and rerun both reviewers on the new revision rather than copying
+the old verdict forward.
+
+For a repeat review, compare the current head with the previously reviewed
+head. Review changed code, affected callers/tests, and unresolved or disputed
+findings rather than automatically repeating the full review. If the code is
+unchanged and only the models changed, focus both reviewers on those findings
+and high-risk decisions. State the delta scope and retain missing runtime-proof
+gates.
 
 ### Step 2: Launch Two Parallel Reviews
 
-Launch two `rubber-duck` agents via the `task` tool, running in **background** mode with different models:
+Launch two `rubber-duck` agents via the app-native `task` tool in **background**
+mode with different models. No standalone model CLI is required.
 
-**Agent 1: Claude Opus 5.5 (deep reasoning)**
-```
+**Agent 1: Claude Opus 5.5**
+
+```javascript
 task({
   name: "opus-review",
   agent_type: "rubber-duck",
@@ -52,27 +72,35 @@ task({
 })
 ```
 
-**Agent 2: GPT-5.6 Sol (1M context, different perspective)**
-```
+**Agent 2: GPT-6 Astra**
+
+```javascript
 task({
-  name: "sol-review",
+  name: "astra-review",
   agent_type: "rubber-duck",
   mode: "background",
-  model: "gpt-5.6-sol",
+  model: "gpt-6-astra",
   context_tier: "long_context",
   reasoning_effort: "high",
   prompt: "<same context + code + review instructions>"
 })
 ```
 
-**Important:** Both agents get the EXACT same prompt so findings are comparable. The prompt must include:
-- Full file contents or diffs being reviewed
-- Project context (language, framework, constraints)
-- Instruction: "For each issue found, classify severity as: CRITICAL (will crash/corrupt/security hole), HIGH (likely bug in real use), MEDIUM (edge case that could bite), LOW (minor improvement)"
+Both agents receive the **exact same prompt** so findings are comparable.
+Include the full file contents or diff, project context, exact revisions,
+constraints, and the severity definitions below.
 
 ### Step 3: Wait for Both to Complete
 
-Use the background interval for independent work. Wait for each completion notification, then read its result with `read_agent`; do not poll. Reconcile both completed reviews before publishing a consensus.
+Use the background interval for independent work. Wait for each completion
+notification, then read its result with `read_agent`; do not poll. Reconcile
+both completed reviews before publishing a consensus.
+
+A completed Hanselman review requires valid output from both requested models
+on the same revision. If either reviewer fails, is unavailable, or returns an
+incomplete assessment, report the review as incomplete. Preserve any completed
+output as advisory evidence, but do not build a consensus table or substitute a
+different model without the user's approval.
 
 ### Step 4: Cross-Reference and Build the Consensus Table
 
@@ -83,60 +111,73 @@ CREATE TABLE IF NOT EXISTS review_findings (
     id TEXT PRIMARY KEY,
     issue TEXT NOT NULL,
     opus_severity TEXT,
-    sol_severity TEXT,
+    astra_severity TEXT,
     consensus TEXT NOT NULL,
     fix_confidence INTEGER NOT NULL
 );
 ```
 
-If the session already has a findings table, inspect and reuse or migrate its schema without discarding earlier findings. Record which model produced each review; do not relabel an older Codex result as Sol.
+If the session already has a findings table, inspect and reuse or migrate its
+schema without discarding earlier findings. Record the actual model ID that
+produced each review; do not relabel earlier findings as results from a
+different model.
 
-For each finding from either model:
-1. Check if the other model found the same or similar issue
-2. Assign consensus:
-   - **Both models flagged it** → `HIGH` consensus (real issue, fix it)
-   - **Only one model flagged it** → `LOW` consensus (may be valid, use judgment)
-   - **One model flagged it but evidence contradicts** → `LOW (disputed)` (investigate)
-3. Assign fix confidence (0-100%):
-   - 99% = trivial fix (typo, missing null check, wrong flag)
-   - 90-95% = straightforward fix requiring some design thought
-   - 70-80% = complex fix, may need research or trade-off decisions
-   - <70% = hard problem, might be intentional, or requires architectural change
+For each finding:
+
+1. Check whether the other model found the same or a similar issue.
+2. Assign consensus: both flagged it is `HIGH`; one flagged it is `LOW`;
+   evidence contradicting a finding is `LOW (disputed)`.
+3. Verify it against the actual code, dependency contract, and tests.
+4. Assign fix confidence:
+   - 99%: trivial fix, such as a wrong flag or missing null check.
+   - 90-95%: straightforward fix requiring some design thought.
+   - 70-80%: complex fix requiring research or trade-offs.
+   - Below 70%: hard problem, intentional behavior, or architecture change.
 
 ### Step 5: Present the Results
 
-Present findings in two tables:
+State the exact reviewed head and base, actual model IDs, context tiers, and
+reasoning effort before the finding tables. Do not describe an incomplete or
+stale run as clean.
 
-**Both Models Agree → HIGH consensus (fix all)**
+**Both Models Agree: HIGH consensus**
 
-| Issue | Opus 5.5 | GPT-5.6 Sol | Fix Confidence |
-|-------|------|-------|----------------|
+| Issue | Opus 5.5 | GPT-6 Astra | Fix Confidence |
+|-------|----------|-------------|----------------|
 | Description of issue | SEVERITY | SEVERITY | XX% |
 
-**Only One Model Flagged → LOW consensus**
+**Only One Model Flagged: LOW consensus**
 
-| Issue | Opus 5.5 | GPT-5.6 Sol | Fix Confidence |
-|-------|------|-------|----------------|
-| Description of issue | SEVERITY or — | SEVERITY or — | XX% |
+| Issue | Opus 5.5 | GPT-6 Astra | Fix Confidence |
+|-------|----------|-------------|----------------|
+| Description of issue | SEVERITY or not flagged | SEVERITY or not flagged | XX% |
 
-Use `—` when a model didn't flag the issue.
+Use `not flagged` when a model did not identify the issue.
 
 ### Step 6: Act on Findings
 
-After presenting the table:
-- Ask the user if they want to fix all issues or select specific ones
-- Fix HIGH consensus issues first (highest priority)
-- For LOW consensus / disputed issues, briefly explain why one model flagged it and why the other didn't
-- For disputed findings, explain your assessment of whether it's a real issue
+- Ask which findings to fix unless the user has already authorized the fixes.
+- Prioritize verified HIGH consensus issues.
+- Explain one-model and disputed findings before acting.
+- Do not broaden the task to satisfy a reviewer. Preserve the repository's
+  scope and proof requirements.
+- Fix confidence is the coordinator's assessment, not a model vote or a
+  replacement for runtime proof.
 
 ## Review Instructions Template
 
-Use this as the base prompt for both review agents (customize the project context):
+Give both reviewers the same adapted prompt:
 
-```
-Review the following code changes for [PROJECT NAME]. This is a [LANGUAGE/FRAMEWORK] project with these constraints: [CONSTRAINTS].
+```text
+Review the following code changes for [PROJECT NAME].
+This is a [LANGUAGE/FRAMEWORK] project with these constraints: [CONSTRAINTS].
+Exact head: [HEAD]. Base or previously reviewed head: [BASE].
 
-Focus on bugs, security issues, race conditions, and correctness problems. Ignore style/formatting.
+Focus on bugs, security issues, race conditions, and correctness problems.
+Ignore style and formatting.
+Write every review comment in simplified technical English. Use short sentences
+and common words, explain necessary technical terms, and avoid jargon or
+unnecessary detail.
 
 [FULL CODE OR DIFF HERE]
 
@@ -148,22 +189,36 @@ For each issue found, classify severity as:
 
 For each issue, include:
 1. What the issue is
-2. Where it is (file + line/region)
-3. Why it matters (impact)
+2. Where it is (file and line/region)
+3. Why it matters (impact and reachability)
 4. Suggested fix
 ```
 
 ## Model Selection
 
-The default pairing is **Claude Opus 5.5** (`claude-opus-5.5`) + **GPT-5.6 Sol** (`gpt-5.6-sol`, `context_tier: "long_context"` for its 1M context tier), both with `reasoning_effort: "high"`. Different model families provide independent perspectives on the same evidence.
+The default pairing is **Claude Opus 5.5** (`claude-opus-5.5`) and
+**GPT-6 Astra** (`gpt-6-astra`, `context_tier: "long_context"`), both with
+`reasoning_effort: "high"`. Different model families provide independent
+perspectives on the same evidence.
 
-`1M` is a context tier, not part of the model ID. Use the tool's supported `long_context` value, not an invented model name. Preserve the high reasoning default unless the user requests a different effort.
+Use the tool's supported `long_context` value, not an invented model name or
+model-name suffix. Do not assume a numeric context-window size. Preserve the
+high reasoning default unless the user requests a different effort.
 
-If a preferred model or context tier is unavailable, report the limitation and use an available alternative only with the user's approval. Record the actual model IDs and context tiers used; do not silently fall back to an older generation.
+If a preferred model or context tier is unavailable, report the limitation and
+use an available alternative only with the user's approval. Record the actual
+model IDs and context tiers used; do not silently fall back to an older
+generation.
 
 ## Important Notes
 
-- **Never skip the cross-reference step.** The value is in the comparison, not individual reviews.
-- **Log disputed findings with your reasoning.** The user should understand why you agree or disagree.
-- **Fix confidence is YOUR assessment**, not the models'. Base it on your understanding of the codebase and the complexity of the fix.
-- **Don't fix LOW consensus issues without asking** unless the user said "fix it all."
+- Never skip cross-referencing. The value is in the comparison, not individual
+  reviews.
+- Both requested reviewers must complete on the same exact revision. One valid
+  review plus one failure is not a dual-model verdict.
+- Log disputed findings and the reasoning for accepting or rejecting them.
+- Model output is advisory input. Verify every accepted finding against the
+  actual code, tests, and dependency behavior before acting.
+- Do not fix LOW consensus issues without user authorization.
+- A clean source review does not satisfy a missing Windows proof pool,
+  current-head UI proof, or required CI check.

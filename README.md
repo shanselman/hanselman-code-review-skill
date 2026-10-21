@@ -1,32 +1,44 @@
 # Hanselman Code Review Skill
 
-Adversarial dual-model code review skill for [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli/).
+Adversarial dual-model code review skill for GitHub Copilot CLI.
 
-Runs two AI models (Claude Opus 5.5 + GPT-5.6 Sol with 1M context), both at high reasoning effort, in parallel on the same code, cross-references their findings, and produces a consensus severity table with fix confidence ratings.
-
-The tool model IDs are `claude-opus-5.5` and `gpt-5.6-sol`. Sol uses `context_tier: "long_context"`; `1M` is not a model-name suffix. Unavailable models or context tiers are reported rather than silently replaced with older generations.
+Runs **Claude Opus 5.5** (`claude-opus-5.5`) and **GPT-6 Astra**
+(`gpt-6-astra`) at high reasoning effort, in parallel on the same code. Astra
+uses `context_tier: "long_context"`; the context tier is not part of the model
+ID. Unavailable models or context tiers are reported rather than silently
+replaced with older generations.
 
 ## How It Works
 
-1. **Two models review independently** — same code, same prompt, different reasoning
-2. **Cross-reference findings** — both flagged it? Almost certainly real. Only one? Use judgment.
-3. **Consensus table** — HIGH (both agree) vs LOW (one model only) with fix confidence %
-4. **Fix prioritization** — HIGH consensus issues first, LOW consensus with user confirmation
+1. **Pin the scope**: record the exact head and base revisions.
+2. **Review independently**: same code, prompt, constraints, and severity rules.
+3. **Verify findings**: check model claims against code, tests, and contracts.
+4. **Cross-reference**: both flagged it is high consensus; one model only is
+   low or disputed consensus.
+5. **Assess fixes**: the coordinator assigns fix confidence and asks before
+   acting on low-consensus findings.
 
-Repeat reviews can target the delta: changed code and its affected paths, unresolved findings, or disputed high-risk decisions when upgrading review models. Both reviewers receive the same bounded scope. A newer-model review does not replace missing runtime proof.
+Repeat reviews can target the delta: changed code and its affected paths,
+unresolved findings, or disputed high-risk decisions when upgrading review
+models. Both reviewers receive the same bounded scope. A newer-model review
+does not replace missing runtime proof.
+
+Both reviewers must complete on the same revision. If either reviewer fails or
+the head changes, report the result as incomplete or stale rather than clean.
 
 ## Installation
 
-Clone into your Copilot skills directory:
+Clone this repository with your normal GitHub-authenticated repository URL:
 
 ```powershell
 cd ~/.copilot/skills
-git clone https://github.com/shanselman/hanselman-code-review-skill.git hanselman-code-review
+git clone <repository-url> hanselman-code-review
 ```
 
 ## Usage
 
 In Copilot CLI, say any of:
+
 - "Do a Hanselman review of my changes"
 - "Run an adversarial code review"
 - "Dual-model review this PR"
@@ -34,20 +46,18 @@ In Copilot CLI, say any of:
 
 ## Output Format
 
-```
-## Both Models Agree → HIGH consensus (fix all)
+```text
+Both models agree: HIGH consensus
 
-| Issue | Opus 5.5 | GPT-5.6 Sol | Fix Confidence |
-|-------|------|-------|----------------|
-| Mutex released before relaunch confirmed | HIGH | HIGH | 95% |
-| Authenticode accepts any signer | HIGH | MEDIUM | 90% |
+| Issue | Opus 5.5 | GPT-6 Astra | Fix Confidence |
+|---|---|---|---|
+| Concrete verified issue | HIGH | HIGH | 95% |
 
-## Only One Model Flagged → LOW consensus
+Only one model flagged: LOW consensus
 
-| Issue | Opus 5.5 | GPT-5.6 Sol | Fix Confidence |
-|-------|------|-------|----------------|
-| Ghost tray icon on exit | LOW | — | 95% |
-| WinHTTP redirect handling | — | HIGH | 80% (disputed) |
+| Issue | Opus 5.5 | GPT-6 Astra | Fix Confidence |
+|---|---|---|---|
+| Verified edge case | not flagged | MEDIUM | 80% |
 ```
 
 ## License
