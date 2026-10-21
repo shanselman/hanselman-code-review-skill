@@ -28,11 +28,11 @@ the head changes, report the result as incomplete or stale rather than clean.
 
 ## Installation
 
-Clone this repository with your normal GitHub-authenticated repository URL:
+Clone the public repository into your Copilot skills directory:
 
 ```powershell
 cd ~/.copilot/skills
-git clone <repository-url> hanselman-code-review
+git clone https://github.com/shanselman/hanselman-code-review-skill.git hanselman-code-review
 ```
 
 ## Usage
